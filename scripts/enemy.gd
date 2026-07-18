@@ -31,6 +31,7 @@ var attack_state := AttackState.NONE
 var attack_state_time := 0.0
 var attack_area: Area2D
 var sprite: AnimatedSprite2D
+var ground_offset := 0.0
 var _attack_hit := false
 
 func _ready() -> void:
@@ -46,6 +47,7 @@ func _ready() -> void:
 	capsule.height = 22.0
 	collider.shape = capsule
 	add_child(collider)
+	ground_offset = collider.position.y + capsule.height * 0.5
 	attack_area = Area2D.new()
 	attack_area.collision_layer = 0
 	attack_area.collision_mask = 2
@@ -228,7 +230,9 @@ func _setup_sprite() -> void:
 		{"name": &"death", "frames": 6, "fps": 11.0, "loop": false},
 	]
 	var character := "melee_guard" if kind == Kind.MELEE else "ranged_guard"
-	sprite = SPRITE_LIBRARY.create_animated_sprite(character, animations)
+	sprite = SPRITE_LIBRARY.create_animated_sprite(
+		character, animations, 128, 0.52, ground_offset
+	)
 	add_child(sprite)
 	SPRITE_LIBRARY.play(sprite, &"idle")
 
@@ -252,14 +256,16 @@ func _update_visual_state() -> void:
 
 func _draw() -> void:
 	draw_colored_polygon(PackedVector2Array([
-		Vector2(-11, 1), Vector2(-7, -1), Vector2(7, -1), Vector2(11, 1),
-		Vector2(7, 3), Vector2(-7, 3)
+		Vector2(-11, ground_offset + 1), Vector2(-7, ground_offset - 1),
+		Vector2(7, ground_offset - 1), Vector2(11, ground_offset + 1),
+		Vector2(7, ground_offset + 3), Vector2(-7, ground_offset + 3)
 	]), Color(0.03, 0.02, 0.06, 0.42))
 	if attack_state == AttackState.WINDUP or attack_state == AttackState.CAST:
 		var pulse := 0.55 + sin(Time.get_ticks_msec() * 0.04) * 0.22
 		var tell_color := Color(1.0, 0.31, 0.24, pulse) if kind == Kind.MELEE else Color(0.82, 0.35, 1.0, pulse)
-		draw_arc(Vector2(0, -14), 18.0, 0.0, TAU, 24, tell_color, 2.0)
-		draw_arc(Vector2(0, -14), 13.0, -PI * 0.5, PI * 1.5, 18, Color(tell_color, pulse * 0.45), 1.0)
+		var tell_center := Vector2(0, ground_offset - 14)
+		draw_arc(tell_center, 18.0, 0.0, TAU, 24, tell_color, 2.0)
+		draw_arc(tell_center, 13.0, -PI * 0.5, PI * 1.5, 18, Color(tell_color, pulse * 0.45), 1.0)
 	for i in max_health:
 		var pip_color := Color("ff6b6b") if i < health else Color(0.18, 0.16, 0.23, 0.8)
-		draw_rect(Rect2(-7 + i * 5, -36, 4, 2), pip_color)
+		draw_rect(Rect2(-7 + i * 5, ground_offset - 36, 4, 2), pip_color)

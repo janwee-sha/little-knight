@@ -6,7 +6,8 @@ static func create_animated_sprite(
 	character: String,
 	animations: Array,
 	canvas_size := 128,
-	display_scale := 0.52
+	display_scale := 0.52,
+	ground_offset := 0.0
 ) -> AnimatedSprite2D:
 	var sprite := AnimatedSprite2D.new()
 	var frames := SpriteFrames.new()
@@ -26,7 +27,10 @@ static func create_animated_sprite(
 				frames.add_frame(animation_name, texture)
 	sprite.sprite_frames = frames
 	sprite.centered = true
-	sprite.position = Vector2(0.0, -float(canvas_size) * display_scale * 0.5)
+	sprite.position = Vector2(
+		0.0,
+		ground_offset - float(canvas_size) * display_scale * 0.5
+	)
 	sprite.scale = Vector2.ONE * display_scale
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.z_index = 2

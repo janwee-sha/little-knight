@@ -42,6 +42,7 @@ var dead := false
 var attack_area: Area2D
 var sprite: AnimatedSprite2D
 var attack_hits: Dictionary = {}
+var ground_offset := 0.0
 var _step_timer := 0.0
 var _was_on_floor := false
 
@@ -54,6 +55,7 @@ func _ready() -> void:
 	capsule.height = 23.0
 	collider.shape = capsule
 	add_child(collider)
+	ground_offset = collider.position.y + capsule.height * 0.5
 	attack_area = Area2D.new()
 	attack_area.collision_layer = 0
 	attack_area.collision_mask = 4
@@ -285,7 +287,9 @@ func _setup_sprite() -> void:
 		{"name": &"hurt", "frames": 2, "fps": 8.0, "loop": false},
 		{"name": &"death", "frames": 6, "fps": 12.0, "loop": false},
 	]
-	sprite = SPRITE_LIBRARY.create_animated_sprite("player", animations)
+	sprite = SPRITE_LIBRARY.create_animated_sprite(
+		"player", animations, 128, 0.52, ground_offset
+	)
 	add_child(sprite)
 	SPRITE_LIBRARY.play(sprite, &"idle")
 
@@ -313,6 +317,7 @@ func _update_visual_state() -> void:
 
 func _draw() -> void:
 	draw_colored_polygon(PackedVector2Array([
-		Vector2(-11, 1), Vector2(-7, -1), Vector2(7, -1), Vector2(11, 1),
-		Vector2(7, 3), Vector2(-7, 3)
+		Vector2(-11, ground_offset + 1), Vector2(-7, ground_offset - 1),
+		Vector2(7, ground_offset - 1), Vector2(11, ground_offset + 1),
+		Vector2(7, ground_offset + 3), Vector2(-7, ground_offset + 3)
 	]), Color(0.02, 0.03, 0.07, 0.38))

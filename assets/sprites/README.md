@@ -1,6 +1,6 @@
 # Little Knight sprite pipeline
 
-Gameplay art starts from approved 64×64 bottom-center, right-facing seed frames. Generated strips are chroma-keyed, repacked, globally normalized per animation, then embedded without rescaling into shared 128×128 bottom-centered runtime canvases. Godot displays character canvases at 0.52 scale with nearest-neighbor filtering, so character size stays stable while attack arcs and dash trails retain their full bounds.
+Gameplay art starts from approved 64×64 bottom-center, right-facing seed frames. Generated strips are chroma-keyed, repacked, globally normalized per animation, then rebuilt from `runtime_manifest.json` into shared bottom-centered runtime canvases. Every animation uses one fixed nearest-neighbor scale for its entire strip, so character proportions stay stable without per-frame drift.
 
 ## Approval gate
 
@@ -19,3 +19,7 @@ The sheet was approved before strip production. `source/`, `raw/`, `canvases/`, 
 - Projectile: flight 4.
 
 Every strip must preserve character identity, facing, palette, proportions, outfit details, transparency, and bottom-center anchoring. Render a preview sheet and inspect it in Godot before updating any animation library.
+
+## Runtime rebuild
+
+Run `python3 tools/rebuild_runtime_sprites.py` with Pillow available. The manifest is the source of truth for canvas sizes and strip-wide scale factors. Scaling always transforms the full authored canvas around its bottom-center anchor; attack effects are never used as per-frame scale or anchor inputs.

@@ -1,0 +1,43 @@
+{
+  "characters": {
+    "player": {
+      "canvas_size": 128,
+      "animations": {
+        "idle": 1.0,
+        "run": 1.0,
+        "jump": 1.0,
+        "attack_one": 0.75,
+        "attack_two": 0.72,
+        "dash": 1.0,
+        "hurt": 0.91,
+        "death": 1.0
+      }
+    },
+    "melee_guard": {
+      "canvas_size": 128,
+      "animations": {
+        "idle": 1.0,
+        "walk": 1.0,
+        "attack": 0.59,
+        "hurt": 0.96,
+        "death": 1.0
+      }
+    },
+    "ranged_guard": {
+      "canvas_size": 128,
+      "animations": {
+        "idle": 1.0,
+        "walk": 1.0,
+        "attack": 0.63,
+        "hurt": 0.78,
+        "death": 1.0
+      }
+    },
+    "projectile": {
+      "canvas_size": 64,
+      "animations": {
+        "flight": 1.0
+      }
+    }
+  }
+}

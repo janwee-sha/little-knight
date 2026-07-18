@@ -33,6 +33,11 @@ func run_checks() -> void:
 	check(is_instance_valid(knight.sprite), "Player should use an AnimatedSprite2D renderer")
 	for animation in [&"idle", &"run", &"jump", &"attack_one", &"attack_two", &"dash", &"hurt", &"death"]:
 		check(knight.sprite.sprite_frames.has_animation(animation), "Player animation should exist: %s" % animation)
+	check_sprite_grounding(knight, "Player")
+	check_runtime_frames(knight.sprite, "Player")
+	check_scale_match(knight.sprite, &"idle", 0, &"attack_one", 0, "Player attack one")
+	check_scale_match(knight.sprite, &"idle", 0, &"attack_two", 5, "Player attack two")
+	check_scale_match(knight.sprite, &"idle", 0, &"hurt", 1, "Player hurt")
 	var initial_health: int = knight.health
 	knight.start_dash()
 	knight.take_damage(1, Vector2.ZERO)
@@ -56,11 +61,28 @@ func run_checks() -> void:
 	check(knight.attack_stage == 2 and knight.attack_phase == knight.AttackPhase.WINDUP, "Buffered input should start stage two")
 
 	var first_enemy: CharacterBody2D
+	var melee_enemy: CharacterBody2D
+	var ranged_enemy: CharacterBody2D
 	for child in game.get_children():
 		if child is CharacterBody2D and child != knight:
-			first_enemy = child
-			break
+			if not is_instance_valid(first_enemy):
+				first_enemy = child
+			if child.kind == child.Kind.MELEE and not is_instance_valid(melee_enemy):
+				melee_enemy = child
+			elif child.kind == child.Kind.RANGED and not is_instance_valid(ranged_enemy):
+				ranged_enemy = child
 	check(is_instance_valid(first_enemy), "An enemy should be available for combat checks")
+	for enemy in [melee_enemy, ranged_enemy]:
+		if is_instance_valid(enemy):
+			var label := "Melee guard" if enemy.kind == enemy.Kind.MELEE else "Ranged guard"
+			check_sprite_grounding(enemy, label)
+			check_runtime_frames(enemy.sprite, label)
+	if is_instance_valid(melee_enemy):
+		check_scale_match(melee_enemy.sprite, &"idle", 0, &"attack", 0, "Melee guard attack")
+		check_scale_match(melee_enemy.sprite, &"idle", 0, &"hurt", 1, "Melee guard hurt")
+	if is_instance_valid(ranged_enemy):
+		check_scale_match(ranged_enemy.sprite, &"idle", 0, &"attack", 0, "Ranged guard attack")
+		check_scale_match(ranged_enemy.sprite, &"idle", 0, &"hurt", 1, "Ranged guard hurt")
 	if is_instance_valid(first_enemy):
 		check(is_instance_valid(first_enemy.sprite), "Enemies should use AnimatedSprite2D renderers")
 		var health_before_contact: int = knight.health
@@ -124,6 +146,82 @@ func run_checks() -> void:
 func check(condition: bool, message: String) -> void:
 	if not condition:
 		failures.append(message)
+
+func check_sprite_grounding(actor: Node, label: String) -> void:
+	var collider: CollisionShape2D
+	for child in actor.get_children():
+		if child is CollisionShape2D and child.shape is CapsuleShape2D:
+			collider = child
+			break
+	check(is_instance_valid(collider), "%s should have a capsule collider" % label)
+	if not is_instance_valid(collider):
+		return
+	var texture: Texture2D = actor.sprite.sprite_frames.get_frame_texture(&"idle", 0)
+	var sprite_bottom: float = (
+		actor.sprite.position.y
+		+ float(texture.get_height()) * actor.sprite.scale.y * 0.5
+	)
+	var capsule := collider.shape as CapsuleShape2D
+	var collider_bottom := collider.position.y + capsule.height * 0.5
+	check(
+		absf(sprite_bottom - collider_bottom) <= 0.01,
+		"%s sprite baseline should match its collider bottom" % label
+	)
+
+func check_runtime_frames(sprite: AnimatedSprite2D, label: String) -> void:
+	for animation in sprite.sprite_frames.get_animation_names():
+		var frame_count := sprite.sprite_frames.get_frame_count(animation)
+		for frame_index in frame_count:
+			var texture := sprite.sprite_frames.get_frame_texture(animation, frame_index)
+			check(
+				texture.get_size() == Vector2(128, 128),
+				"%s %s frame %d should use a 128x128 runtime canvas" % [
+					label, animation, frame_index + 1
+				]
+			)
+			var bounds := alpha_bounds(texture)
+			check(
+				bounds.position.y + bounds.size.y == 128,
+				"%s %s frame %d should preserve the bottom anchor" % [
+					label, animation, frame_index + 1
+				]
+			)
+
+func check_scale_match(
+	sprite: AnimatedSprite2D,
+	reference_animation: StringName,
+	reference_frame: int,
+	candidate_animation: StringName,
+	candidate_frame: int,
+	label: String
+) -> void:
+	var reference := sprite.sprite_frames.get_frame_texture(reference_animation, reference_frame)
+	var candidate := sprite.sprite_frames.get_frame_texture(candidate_animation, candidate_frame)
+	var reference_height := alpha_bounds(reference).size.y
+	var candidate_height := alpha_bounds(candidate).size.y
+	check(
+		absi(reference_height - candidate_height) <= 2,
+		"%s calibration height should stay within 2 pixels of idle (%d vs %d)" % [
+			label, candidate_height, reference_height
+		]
+	)
+
+func alpha_bounds(texture: Texture2D) -> Rect2i:
+	var image := texture.get_image()
+	var min_x := image.get_width()
+	var min_y := image.get_height()
+	var max_x := -1
+	var max_y := -1
+	for y in image.get_height():
+		for x in image.get_width():
+			if image.get_pixel(x, y).a > 0.03:
+				min_x = mini(min_x, x)
+				min_y = mini(min_y, y)
+				max_x = maxi(max_x, x)
+				max_y = maxi(max_y, y)
+	if max_x < min_x or max_y < min_y:
+		return Rect2i()
+	return Rect2i(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
 
 func has_key(action: StringName, key: Key) -> bool:
 	for event in InputMap.action_get_events(action):
