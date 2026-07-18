@@ -1,0 +1,4 @@
+interface:
+  display_name: "Godot Gameplay QA"
+  short_description: "Run Godot smoke tests and visual gameplay QA"
+  default_prompt: "Use $godot-gameplay-qa to run smoke tests, validate Godot logs, and inspect rendered gameplay captures."
