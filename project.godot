@@ -15,14 +15,52 @@ run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
+[autoload]
+
+InputRouter="*res://scripts/input_router.gd"
+SettingsStore="*res://scripts/settings_store.gd"
+AudioManager="*res://scripts/audio_manager.gd"
+FeedbackDirector="*res://scripts/feedback_director.gd"
+
 [display]
 
-window/size/viewport_width=1280
-window/size/viewport_height=720
+window/size/viewport_width=640
+window/size/viewport_height=360
 window/size/window_width_override=1280
 window/size/window_height_override=720
-window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
+window/stretch/mode="viewport"
+window/stretch/scale_mode="integer"
+
+[input]
+
+move_left={
+"deadzone": 0.25,
+"events": []
+}
+move_right={
+"deadzone": 0.25,
+"events": []
+}
+jump={
+"deadzone": 0.25,
+"events": []
+}
+attack={
+"deadzone": 0.25,
+"events": []
+}
+dash={
+"deadzone": 0.25,
+"events": []
+}
+pause={
+"deadzone": 0.25,
+"events": []
+}
+restart={
+"deadzone": 0.25,
+"events": []
+}
 
 [physics]
 
@@ -30,6 +68,7 @@ window/stretch/aspect="expand"
 
 [rendering]
 
+textures/canvas_textures/default_texture_filter=0
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
