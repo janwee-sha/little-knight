@@ -1,0 +1,4 @@
+interface:
+  display_name: "Godot Input Parity"
+  short_description: "Audit keyboard, mouse, gamepad, and UI input parity"
+  default_prompt: "Use $godot-input-parity to audit and verify keyboard, mouse, gamepad, prompts, and menu navigation in this Godot project."
