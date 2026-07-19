@@ -15,13 +15,15 @@ enum AttackPhase { IDLE, WINDUP, ACTIVE, RECOVERY }
 const COMBAT := preload("res://scripts/combat_rules.gd")
 const CAMERA_SCRIPT := preload("res://scripts/camera_rig.gd")
 const SPRITE_LIBRARY := preload("res://scripts/sprite_library.gd")
-const SPEED := 122.5
+const SPEED := 105.0
 const ACCELERATION := 775.0
 const AIR_ACCELERATION := 460.0
 const FRICTION := 950.0
 const JUMP_SPEED := -292.5
+const DOUBLE_JUMP_SPEED := JUMP_SPEED
 const GRAVITY := 875.0
-const DASH_SPEED := 325.0
+const DASH_SPEED := 260.0
+const DASH_MOVE_DURATION := 0.12
 const MAX_STAMINA := 100.0
 const STAMINA_REGEN_RATE := 35.0
 const STAMINA_REGEN_DELAY := 0.5
@@ -61,6 +63,7 @@ var perfect_guard_visual_time := 0.0
 var riposte_window_time := 0.0
 var stamina_regen_delay := 0.0
 var guarding := false
+var air_jump_used := false
 var air_dash_used := false
 var walk_phase := 0.0
 var controls_enabled := true
@@ -76,7 +79,9 @@ var _was_on_floor := false
 
 func _ready() -> void:
 	collision_layer = 2
-	collision_mask = 1 | 4
+	# Combat hitboxes still use layers 2 and 4, but character bodies only
+	# collide with terrain so enemies cannot push or carry the player.
+	collision_mask = 1
 	var collider := CollisionShape2D.new()
 	var capsule := CapsuleShape2D.new()
 	capsule.radius = 7.0
@@ -107,8 +112,11 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if dead:
 		return
+	var was_dash_moving := dash_move_time > 0.0
 	dash_time = maxf(dash_time - delta, 0.0)
 	dash_move_time = maxf(dash_move_time - delta, 0.0)
+	if was_dash_moving and dash_move_time <= 0.0:
+		velocity.x = 0.0
 	invulnerable_time = maxf(invulnerable_time - delta, 0.0)
 	hurt_time = maxf(hurt_time - delta, 0.0)
 	guard_break_time = maxf(guard_break_time - delta, 0.0)
@@ -143,11 +151,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		if not is_on_floor():
 			velocity.y += GRAVITY * delta
-		if jump_buffer > 0.0 and coyote_time > 0.0 and controls_enabled and _can_jump():
-			velocity.y = JUMP_SPEED
-			jump_buffer = 0.0
-			coyote_time = 0.0
-			AudioManager.play_sfx(&"jump", 0.035, -2.0)
+		_try_jump()
 		var can_move := controls_enabled and hurt_time <= 0.0 and guard_break_time <= 0.0
 		var input_axis := Input.get_axis("move_left", "move_right") if can_move else 0.0
 		if absf(input_axis) > 0.05:
@@ -168,6 +172,7 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 	if is_on_floor():
+		air_jump_used = false
 		air_dash_used = false
 	if is_on_floor() and not _was_on_floor and falling_speed > 95.0:
 		AudioManager.play_sfx(&"land", 0.06, -3.0)
@@ -191,6 +196,21 @@ func _can_start_attack() -> bool:
 
 func _can_jump() -> bool:
 	return hurt_time <= 0.0 and guard_break_time <= 0.0 and dash_time <= 0.0 and not guarding and attack_phase == AttackPhase.IDLE
+
+func _try_jump() -> bool:
+	if jump_buffer <= 0.0 or not controls_enabled or not _can_jump():
+		return false
+	var is_air_jump := coyote_time <= 0.0
+	if is_air_jump and air_jump_used:
+		return false
+	air_jump_used = is_air_jump
+	velocity.y = DOUBLE_JUMP_SPEED if is_air_jump else JUMP_SPEED
+	jump_buffer = 0.0
+	coyote_time = 0.0
+	AudioManager.play_sfx(&"jump", 0.035, -2.0)
+	SPRITE_LIBRARY.play(sprite, &"jump", true)
+	sprite.frame = 0
+	return true
 
 func _handle_attack_input() -> void:
 	if attack_phase == AttackPhase.IDLE:
@@ -334,7 +354,7 @@ func start_dash() -> bool:
 	if not is_on_floor():
 		air_dash_used = true
 	dash_time = 0.28
-	dash_move_time = 0.16
+	dash_move_time = DASH_MOVE_DURATION
 	invulnerable_time = maxf(invulnerable_time, 0.22)
 	attack_area.set_deferred("monitoring", false)
 	AudioManager.play_sfx(&"dash", 0.04, -2.0)
@@ -598,9 +618,8 @@ func _draw() -> void:
 		Vector2(7, ground_offset - 1), Vector2(11, ground_offset + 1),
 		Vector2(7, ground_offset + 3), Vector2(-7, ground_offset + 3)
 	]), Color(0.02, 0.03, 0.07, 0.38))
-	if guarding:
+	if guarding and perfect_guard_time > 0.0:
 		var arc_center := Vector2(facing * 7.0, ground_offset - 12.0)
 		var from_angle := -PI * 0.5 if facing > 0.0 else PI * 0.5
 		var to_angle := PI * 0.5 if facing > 0.0 else PI * 1.5
-		var color := Color("ffe36e") if perfect_guard_time > 0.0 else Color("8de4dc")
-		draw_arc(arc_center, 12.0, from_angle, to_angle, 12, Color(color, 0.9), 2.0)
+		draw_arc(arc_center, 12.0, from_angle, to_angle, 12, Color(Color("ffe36e"), 0.9), 2.0)

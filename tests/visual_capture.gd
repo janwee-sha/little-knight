@@ -21,6 +21,18 @@ func _run() -> void:
 	await process_frame
 	_capture("gameplay.png")
 
+	game.player.global_position.y -= 24.0
+	game.player.velocity.y = 20.0
+	game.player.coyote_time = 0.0
+	game.player.jump_buffer = 0.13
+	game.player._try_jump()
+	await create_timer(0.08).timeout
+	_capture("double_jump.png")
+	game.player.global_position = Vector2(75.0, 310.0 - game.player.ground_offset)
+	game.player.velocity = Vector2.ZERO
+	game.player.air_jump_used = false
+	await process_frame
+
 	game.player.controls_enabled = false
 	game.player.velocity = Vector2.ZERO
 	game.player.start_heavy_attack()
@@ -28,7 +40,9 @@ func _run() -> void:
 	_capture("heavy_attack.png")
 	game.player._cancel_attack()
 
+	game.player.controls_enabled = true
 	game.player.start_guard()
+	game.player.perfect_guard_time = 0.0
 	await create_timer(0.06).timeout
 	_capture("guard.png")
 	game.player.stop_guard()

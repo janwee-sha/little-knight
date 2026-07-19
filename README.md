@@ -5,7 +5,7 @@
 ## 玩法
 
 - `A / D` 或方向键：移动
-- `Space / W / ↑`：跳跃（支持土狼时间与跳跃输入缓存）
+- `Space / W / ↑`：跳跃；空中再次按下可二连跳（支持土狼时间与跳跃输入缓存）
 - `鼠标左键 / J / Z`：两段轻击连招，可击破普通投射物
 - `鼠标中键 / E / K`：重击；完美防御后的短暂窗口内会改为强力反击
 - `鼠标右键 / Q / L`：按住正面防御；在攻击命中前 7 帧内按下可完美防御
@@ -33,6 +33,6 @@ python3 .agents/skills/godot-input-parity/scripts/run_input_audit.py \
   --godot /Applications/Godot.app/Contents/MacOS/Godot
 ```
 
-视觉回归脚本 `tests/visual_capture.gd` 会把重击、防御、完美防御、敌人黄/红光、低精力、检查点和暂停画面写入 `/private/tmp/little-knight-visual/`。
+视觉回归脚本 `tests/visual_capture.gd` 会把二连跳、重击、防御、完美防御、敌人黄/红光、低精力、检查点和暂停画面写入 `/private/tmp/little-knight-visual/`。
 
 第三方字体与 CC0 音效来源见 [`THIRD_PARTY_ASSETS.md`](THIRD_PARTY_ASSETS.md)。

@@ -44,6 +44,8 @@ func run_checks() -> void:
 	check(has_joy_button(&"restart", JOY_BUTTON_START), "Gamepad menu button should restart from terminal screens")
 
 	var knight: CharacterBody2D = game.player
+	check(is_equal_approx(knight.SPEED, 105.0), "Player movement speed should use the heavier 105 px/s tuning")
+	check(knight.collision_mask == 1, "Player body should collide with terrain only")
 	check(is_instance_valid(knight.sprite), "Player should use an AnimatedSprite2D renderer")
 	for animation in [&"idle", &"run", &"jump", &"attack_one", &"attack_two", &"heavy_attack", &"guard", &"perfect_guard", &"riposte", &"dash", &"hurt", &"death"]:
 		check(knight.sprite.sprite_frames.has_animation(animation), "Player animation should exist: %s" % animation)
@@ -53,13 +55,21 @@ func run_checks() -> void:
 	check_scale_match(knight.sprite, &"idle", 0, &"attack_two", 5, "Player attack two")
 	for animation in [&"heavy_attack", &"guard", &"perfect_guard", &"riposte"]:
 		check_animation_bounds(knight.sprite, animation, "Player %s" % animation)
+	test_double_jump_rules(knight)
+	await test_spike_traversal(knight)
 
 	var initial_health: int = knight.health
 	var initial_stamina: float = knight.stamina
 	knight.start_dash()
 	check(is_equal_approx(knight.stamina, initial_stamina - 24.0), "Dash should cost 24 stamina")
+	check(is_equal_approx(knight.dash_move_time, 0.12), "Dash movement should use the shortened 0.12 second window")
+	check(knight.DASH_SPEED * knight.DASH_MOVE_DURATION <= 32.0, "Dash travel should stay within the short-range 32 pixel budget")
 	knight.take_damage(1, Vector2.ZERO)
 	check(knight.health == initial_health, "Dash should grant invulnerability")
+	knight.velocity.x = knight.DASH_SPEED
+	knight.dash_move_time = 0.001
+	knight._physics_process(0.01)
+	check(is_zero_approx(knight.velocity.x), "Dash should end with no horizontal inertia")
 	knight.invulnerable_time = 0.0
 	knight.take_damage(1, Vector2.ZERO)
 	check(knight.health == initial_health - 1, "The dodge action tail should be vulnerable after its 0.22 second i-frame window")
@@ -103,6 +113,10 @@ func run_checks() -> void:
 	check(is_instance_valid(melee_enemy), "A melee enemy should be available")
 	check(is_instance_valid(ranged_enemy), "A ranged enemy should be available")
 	if is_instance_valid(melee_enemy):
+		check((knight.collision_mask & melee_enemy.collision_layer) == 0, "Player body should pass through enemy bodies without being carried")
+		check((melee_enemy.collision_mask & knight.collision_layer) == 0, "Enemy body should pass through the player body")
+		check(knight.attack_area.collision_mask == melee_enemy.collision_layer, "Player attacks should still detect enemy combat layers")
+		check(melee_enemy.attack_area.collision_mask == knight.collision_layer, "Enemy attacks should still detect the player combat layer")
 		check(melee_enemy.max_health == 8 and melee_enemy.max_poise == 4, "Melee guards should use hard health and poise")
 		check_sprite_grounding(melee_enemy, "Melee guard")
 		check_runtime_frames(melee_enemy.sprite, "Melee guard")
@@ -245,6 +259,79 @@ func test_guard_rules(knight: CharacterBody2D, enemy: CharacterBody2D) -> void:
 	check(result == COMBAT.HitResult.GUARD_BROKEN and knight.stamina == 0.0, "Insufficient stamina should cause guard break")
 	feedback_director.reset()
 
+func test_double_jump_rules(knight: CharacterBody2D) -> void:
+	reset_knight(knight)
+	var stamina_before: float = knight.stamina
+	knight.coyote_time = 0.11
+	knight.jump_buffer = 0.13
+	check(knight._try_jump(), "Ground or coyote jump should start the first jump")
+	check(not knight.air_jump_used, "The first jump should preserve the air jump")
+	check(is_equal_approx(knight.velocity.y, knight.JUMP_SPEED), "The first jump should use the configured jump speed")
+
+	knight.velocity.y = 20.0
+	knight.coyote_time = 0.0
+	knight.jump_buffer = 0.13
+	knight.sprite.frame = 3
+	check(knight._try_jump(), "A second jump should be available while airborne")
+	check(knight.air_jump_used, "The second jump should consume the air jump")
+	check(is_equal_approx(knight.DOUBLE_JUMP_SPEED, knight.JUMP_SPEED), "The second jump should be tuned to the first jump height")
+	check(is_equal_approx(knight.velocity.y, knight.DOUBLE_JUMP_SPEED), "The second jump should use the configured double-jump speed")
+	check(knight.sprite.animation == &"jump" and knight.sprite.frame == 0, "The second jump should restart the jump animation")
+	check(is_equal_approx(knight.stamina, stamina_before), "Double jumping should not consume stamina")
+
+	var velocity_before_third_jump: float = knight.velocity.y
+	knight.jump_buffer = 0.13
+	check(not knight._try_jump(), "A third airborne jump should be rejected")
+	check(is_equal_approx(knight.velocity.y, velocity_before_third_jump), "A rejected third jump should not change vertical velocity")
+
+	reset_knight(knight)
+	knight.coyote_time = 0.0
+	knight.jump_buffer = 0.13
+	check(knight._try_jump(), "Walking off a ledge should still leave one air jump")
+	knight.jump_buffer = 0.13
+	check(not knight._try_jump(), "Walking off a ledge should not grant two air jumps")
+
+	knight.jump_buffer = 0.0
+	knight.velocity.y = 5.0
+	knight._physics_process(1.0 / 60.0)
+	check(not knight.air_jump_used, "Landing should restore the air jump")
+
+	reset_knight(knight)
+	knight.hurt_time = 0.1
+	knight.coyote_time = 0.0
+	knight.jump_buffer = 0.13
+	check(not knight._try_jump() and not knight.air_jump_used, "Blocked jump states should not consume the air jump")
+	reset_knight(knight)
+
+func test_spike_traversal(knight: CharacterBody2D) -> void:
+	var disabled_enemies: Array[Node] = []
+	for child in game.get_children():
+		if child is CharacterBody2D and child != knight:
+			child.process_mode = Node.PROCESS_MODE_DISABLED
+			disabled_enemies.append(child)
+	for hazard: Rect2 in game.hazard_rects:
+		reset_knight(knight)
+		knight.global_position = Vector2(hazard.position.x - 24.0, 310.0 - knight.ground_offset)
+		for _frame in 4:
+			await physics_frame
+		var health_before: int = knight.health
+		Input.action_press(&"move_right")
+		knight.jump_buffer = 0.13
+		for frame in 80:
+			if frame == 18:
+				knight.jump_buffer = 0.13
+			await physics_frame
+		Input.action_release(&"move_right")
+		check(knight.health == health_before, "Double jump should clear the %.0f pixel spike strip without damage" % hazard.size.x)
+		check(knight.global_position.x > hazard.end.x + 10.0, "Double jump should land beyond the %.0f pixel spike strip" % hazard.size.x)
+	Input.action_release(&"move_right")
+	reset_knight(knight)
+	knight.global_position = Vector2(75.0, 310.0 - knight.ground_offset)
+	for enemy in disabled_enemies:
+		enemy.process_mode = Node.PROCESS_MODE_INHERIT
+	for _frame in 4:
+		await physics_frame
+
 func reset_knight(knight: CharacterBody2D) -> void:
 	knight._cancel_attack()
 	knight.stop_guard()
@@ -258,10 +345,15 @@ func reset_knight(knight: CharacterBody2D) -> void:
 	knight.riposte_window_time = 0.0
 	knight.riposte_target = null
 	knight.stamina_regen_delay = 0.0
+	knight.coyote_time = 0.0
+	knight.jump_buffer = 0.0
+	knight.velocity = Vector2.ZERO
+	knight.air_jump_used = false
+	knight.air_dash_used = false
 	knight.controls_enabled = true
 	knight.dead = false
 	knight.collision_layer = 2
-	knight.collision_mask = 1 | 4
+	knight.collision_mask = 1
 
 func cleanup_and_finish() -> void:
 	feedback_director.reset()
