@@ -6,10 +6,14 @@ signal attack_telegraphed(enemy: Node, attack_type: int)
 
 enum Kind { MELEE, RANGED }
 enum AttackState { NONE, WINDUP, ACTIVE, RECOVERY, CAST }
+enum EdgeResponse { STOP, TURN, MOVE_INWARD }
 
 const COMBAT := preload("res://scripts/combat_rules.gd")
 const SPRITE_LIBRARY := preload("res://scripts/sprite_library.gd")
 const GRAVITY := 850.0
+const EDGE_PROBE_MARGIN := 3.0
+const EDGE_PROBE_TOP := 4.0
+const EDGE_PROBE_DEPTH := 16.0
 
 var kind: Kind = Kind.MELEE
 var target: CharacterBody2D
@@ -36,7 +40,9 @@ var last_attack_type := -1
 var attack_area: Area2D
 var attack_box: RectangleShape2D
 var sprite: AnimatedSprite2D
+var edge_probe: RayCast2D
 var ground_offset := 0.0
+var body_radius := 7.5
 var _attack_hit := false
 var _attack_slot_reserved := false
 var _rng := RandomNumberGenerator.new()
@@ -53,7 +59,7 @@ func _ready() -> void:
 		max_poise = 3
 	var collider := CollisionShape2D.new()
 	var capsule := CapsuleShape2D.new()
-	capsule.radius = 7.5
+	capsule.radius = body_radius
 	capsule.height = 22.0
 	collider.shape = capsule
 	add_child(collider)
@@ -69,6 +75,14 @@ func _ready() -> void:
 	attack_area.add_child(attack_shape)
 	attack_area.body_entered.connect(_on_attack_body_entered)
 	add_child(attack_area)
+	edge_probe = RayCast2D.new()
+	edge_probe.name = "EdgeProbe"
+	edge_probe.collision_mask = 1
+	edge_probe.collide_with_areas = false
+	edge_probe.collide_with_bodies = true
+	edge_probe.exclude_parent = true
+	edge_probe.enabled = true
+	add_child(edge_probe)
 	_setup_sprite()
 	queue_redraw()
 
@@ -82,17 +96,28 @@ func _physics_process(delta: float) -> void:
 	poise_recovery_time = maxf(poise_recovery_time - delta, 0.0)
 	if poise_recovery_time <= 0.0 and poise < max_poise and hurt_time <= 0.0:
 		poise = max_poise
-	if not is_on_floor():
+	var grounded := is_on_floor()
+	if not grounded:
 		velocity.y += GRAVITY * delta
-	if not is_instance_valid(target):
-		velocity.x = move_toward(velocity.x, 0.0, 350.0 * delta)
-		move_and_slide()
-		_update_visual_state()
-		return
-
-	var offset := target.global_position - global_position
-	var distance := absf(offset.x)
-	if not encounter_active:
+	var has_target := is_instance_valid(target)
+	var offset := Vector2.ZERO
+	var distance := 0.0
+	if has_target:
+		offset = target.global_position - global_position
+		distance = absf(offset.x)
+	if not has_target:
+		if grounded:
+			_apply_ground_motion(0.0, 350.0, delta, EdgeResponse.STOP)
+		else:
+			velocity.x = move_toward(velocity.x, 0.0, 350.0 * delta)
+	elif not grounded:
+		if hurt_time > 0.0 or parried_time > 0.0:
+			velocity.x = move_toward(velocity.x, 0.0, 320.0 * delta)
+		elif attack_state != AttackState.NONE:
+			_update_attack_state(delta)
+		else:
+			velocity.x = move_toward(velocity.x, 0.0, 120.0 * delta)
+	elif not encounter_active:
 		var alert_range := 360.0 if kind == Kind.RANGED else 235.0
 		if distance <= alert_range and absf(offset.y) < 100.0:
 			var game := get_tree().get_first_node_in_group("game")
@@ -112,7 +137,10 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	walk_phase += absf(velocity.x) * delta * 0.07
 	if attack_state == AttackState.NONE and absf(velocity.x) > 4.0 and hurt_time <= 0.0:
-		facing = signf(velocity.x)
+		if encounter_active and has_target and not is_zero_approx(offset.x):
+			facing = signf(offset.x)
+		else:
+			facing = signf(velocity.x)
 	attack_area.position.x = facing * _attack_offset(current_attack_type)
 	if global_position.y > 450.0:
 		die()
@@ -122,18 +150,20 @@ func _physics_process(delta: float) -> void:
 func _update_patrol(delta: float) -> void:
 	if absf(position.x - home_x) > 62.5:
 		patrol_direction = -signf(position.x - home_x)
-	velocity.x = move_toward(velocity.x, patrol_direction * 28.0, 210.0 * delta)
 	if is_on_wall():
 		patrol_direction *= -1.0
+	_apply_ground_motion(patrol_direction * 28.0, 210.0, delta, EdgeResponse.TURN)
 
 func _update_melee(offset: Vector2, distance: float, delta: float) -> void:
+	if not is_zero_approx(offset.x):
+		facing = signf(offset.x)
 	if distance < 78.0 and absf(offset.y) < 30.0 and attack_cooldown <= 0.0:
 		var next_attack := _choose_melee_attack(distance)
 		if next_attack >= 0 and _request_attack_slot(next_attack):
 			_start_melee_attack(offset, next_attack, true)
 			return
 	if distance < 250.0 and absf(offset.y) < 90.0:
-		velocity.x = move_toward(velocity.x, signf(offset.x) * 67.5, 380.0 * delta)
+		_apply_ground_motion(signf(offset.x) * 67.5, 380.0, delta, EdgeResponse.STOP)
 	else:
 		_update_patrol(delta)
 
@@ -150,18 +180,58 @@ func _choose_melee_attack(distance: float) -> int:
 	return COMBAT.AttackType.YELLOW
 
 func _update_ranged(offset: Vector2, distance: float, delta: float) -> void:
+	if not is_zero_approx(offset.x):
+		facing = signf(offset.x)
 	if distance < 112.0:
-		velocity.x = move_toward(velocity.x, -signf(offset.x) * 52.5, 330.0 * delta)
+		_apply_ground_motion(-signf(offset.x) * 52.5, 330.0, delta, EdgeResponse.MOVE_INWARD)
 	elif distance > 225.0 and distance < 390.0:
-		velocity.x = move_toward(velocity.x, signf(offset.x) * 39.0, 275.0 * delta)
+		_apply_ground_motion(signf(offset.x) * 39.0, 275.0, delta, EdgeResponse.STOP)
 	else:
-		velocity.x = move_toward(velocity.x, 0.0, 335.0 * delta)
+		_apply_ground_motion(0.0, 335.0, delta, EdgeResponse.STOP)
 	if distance < 370.0 and absf(offset.y) < 120.0 and attack_cooldown <= 0.0:
 		var next_attack := COMBAT.AttackType.NORMAL
 		if last_attack_type >= 0 and last_attack_type != COMBAT.AttackType.RED and _rng.randf() < 0.25:
 			next_attack = COMBAT.AttackType.RED
 		if _request_attack_slot(next_attack):
 			_start_ranged_cast(offset, next_attack, true)
+
+func _apply_ground_motion(
+	target_speed: float,
+	acceleration: float,
+	delta: float,
+	edge_response: int,
+	immediate := false
+) -> bool:
+	var candidate := target_speed if immediate else move_toward(velocity.x, target_speed, acceleration * delta)
+	if is_zero_approx(candidate):
+		velocity.x = 0.0
+		return true
+	var direction := signf(candidate)
+	if _has_floor_ahead(direction, candidate, delta):
+		velocity.x = candidate
+		return true
+	velocity.x = 0.0
+	if edge_response == EdgeResponse.TURN:
+		patrol_direction = -direction
+		var reverse_patrol := patrol_direction * absf(target_speed)
+		if _has_floor_ahead(patrol_direction, reverse_patrol, delta):
+			velocity.x = move_toward(0.0, reverse_patrol, acceleration * delta)
+	elif edge_response == EdgeResponse.MOVE_INWARD:
+		var inward_direction := -direction
+		var inward_speed := inward_direction * absf(target_speed)
+		if _has_floor_ahead(inward_direction, inward_speed, delta):
+			velocity.x = move_toward(0.0, inward_speed, acceleration * delta)
+	return false
+
+func _has_floor_ahead(direction: float, speed: float, delta: float) -> bool:
+	if not is_on_floor() or is_zero_approx(direction):
+		return false
+	var forward_distance := body_radius + absf(speed) * delta + EDGE_PROBE_MARGIN
+	var probe_x := signf(direction) * forward_distance
+	edge_probe.position = Vector2(probe_x, ground_offset - EDGE_PROBE_TOP)
+	edge_probe.target_position = Vector2(0.0, EDGE_PROBE_DEPTH)
+	edge_probe.force_raycast_update()
+	return edge_probe.is_colliding()
 
 func _request_attack_slot(attack_type: int) -> bool:
 	var game := get_tree().get_first_node_in_group("game")
@@ -215,9 +285,9 @@ func _tutorial_key_for(attack_type: int) -> StringName:
 
 func _update_attack_state(delta: float) -> void:
 	if attack_state == AttackState.ACTIVE:
-		velocity.x = facing * _lunge_speed(current_attack_type)
+		_apply_ground_motion(facing * _lunge_speed(current_attack_type), 0.0, delta, EdgeResponse.STOP, true)
 	else:
-		velocity.x = move_toward(velocity.x, 0.0, 480.0 * delta)
+		_apply_ground_motion(0.0, 480.0, delta, EdgeResponse.STOP)
 	attack_state_time -= delta
 	if attack_state_time > 0.0:
 		return
@@ -268,7 +338,7 @@ func _hit_melee_target(body: Node) -> void:
 	if _attack_hit or attack_state != AttackState.ACTIVE:
 		return
 	_attack_hit = true
-	var damage := 3 if current_attack_type == COMBAT.AttackType.RED else 2
+	var damage := COMBAT.health_damage_for(current_attack_type)
 	var guard_cost := 18.0 if current_attack_type == COMBAT.AttackType.NORMAL else 0.0
 	var perfect_cost := 28.0 if current_attack_type == COMBAT.AttackType.YELLOW else 22.0
 	var knockback := Vector2(facing * (205.0 if current_attack_type == COMBAT.AttackType.RED else 155.0), -105.0)

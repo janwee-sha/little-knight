@@ -4,12 +4,14 @@ const COMBAT := preload("res://scripts/combat_rules.gd")
 const PLAYER_SCRIPT := preload("res://scripts/player.gd")
 const ENEMY_SCRIPT := preload("res://scripts/enemy.gd")
 const PROJECTILE_SCRIPT := preload("res://scripts/projectile.gd")
+const HEALTH_RELIC_SCRIPT := preload("res://scripts/health_relic.gd")
 const HUD_SCRIPT := preload("res://scripts/hud.gd")
 const PAUSE_MENU_SCRIPT := preload("res://scripts/pause_menu.gd")
 const BACKGROUND_TEXTURE := preload("res://assets/backgrounds/moonlit_ruins.png")
 
 const WORLD_WIDTH := 2800.0
 const GROUND_Y := 310.0
+const HEALTH_RELIC_POSITION := Vector2(1297.5, 219.5)
 
 var player: CharacterBody2D
 var hud: CanvasLayer
@@ -25,6 +27,7 @@ var combat_clock := 0.0
 var last_enemy_attack_time := -99.0
 var last_red_attack_time := -99.0
 var active_melee_attacker: Node
+var health_relic_collected_this_attempt := false
 
 func _ready() -> void:
 	get_tree().paused = false
@@ -36,6 +39,7 @@ func _ready() -> void:
 	spawn_player()
 	spawn_encounters()
 	create_goal()
+	create_health_relic(HEALTH_RELIC_POSITION)
 	create_healing_shrine(Vector2(1460, 289))
 	hud.set_enemy_count(enemies_left, enemies_total)
 	queue_redraw()
@@ -176,6 +180,8 @@ func spawn_player() -> void:
 	player.stamina_changed.connect(_on_player_stamina_changed)
 	player.damaged.connect(_on_player_damaged)
 	player.died.connect(_on_player_died)
+	if RunState.has_secured_health_relic():
+		player.increase_max_health(1)
 	add_child(player)
 
 func spawn_encounters() -> void:
@@ -257,11 +263,33 @@ func create_healing_shrine(where: Vector2) -> void:
 		shrine.modulate.a = 0.35
 	add_child(shrine)
 
+func create_health_relic(where: Vector2) -> void:
+	if RunState.has_secured_health_relic():
+		return
+	var relic := HEALTH_RELIC_SCRIPT.new()
+	relic.name = "HealthRelic"
+	relic.position = where
+	relic.collected.connect(_on_health_relic_collected)
+	add_child(relic)
+
+func _on_health_relic_collected(relic: Area2D, body: Node) -> void:
+	if body != player or health_relic_collected_this_attempt:
+		return
+	health_relic_collected_this_attempt = true
+	player.increase_max_health(1)
+	if RunState.has_shrine_checkpoint():
+		RunState.secure_health_relic()
+	AudioManager.play_world(&"shrine", relic.global_position, 0.02, 1.0)
+	FeedbackDirector.request_hit(relic.global_position, false, false, Color("75e9df"))
+	hud.show_toast("获得生命圣物：最大生命 +1", 2.2)
+
 func _on_shrine_entered(body: Node, shrine: Area2D) -> void:
 	if body != player or shrine.get_meta("used"):
 		return
 	shrine.set_meta("used", true)
 	RunState.activate_shrine()
+	if health_relic_collected_this_attempt:
+		RunState.secure_health_relic()
 	var healed: bool = player.health < player.max_health
 	if healed:
 		player.heal(2)

@@ -39,9 +39,10 @@ const RIPOSTE_ATTACK := Vector3(6.0 / 60.0, 5.0 / 60.0, 14.0 / 60.0)
 const COMBO_BUFFER_WINDOW := 8.0 / 60.0
 const PERFECT_GUARD_WINDOW := 7.0 / 60.0
 const RIPOSTE_WINDOW := 0.65
+const BASE_MAX_HEALTH := 3
 
-var max_health := 5
-var health := 5
+var max_health := BASE_MAX_HEALTH
+var health := BASE_MAX_HEALTH
 var max_stamina := MAX_STAMINA
 var stamina := MAX_STAMINA
 var facing := 1.0
@@ -533,6 +534,13 @@ func _notify_stamina_empty() -> void:
 func heal(amount: int) -> void:
 	if dead:
 		return
+	health = mini(health + amount, max_health)
+	health_changed.emit(health, max_health)
+
+func increase_max_health(amount: int) -> void:
+	if dead or amount <= 0:
+		return
+	max_health += amount
 	health = mini(health + amount, max_health)
 	health_changed.emit(health, max_health)
 

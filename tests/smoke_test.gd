@@ -44,6 +44,12 @@ func run_checks() -> void:
 	check(has_joy_button(&"restart", JOY_BUTTON_START), "Gamepad menu button should restart from terminal screens")
 
 	var knight: CharacterBody2D = game.player
+	check(knight.max_health == 3 and knight.health == 3, "Player should begin each fresh run with three filled health slots")
+	check(game.hud.health_label.text == "♥ ♥ ♥", "HUD should begin with exactly three filled hearts")
+	check(COMBAT.health_damage_for(COMBAT.AttackType.NORMAL) == 1, "Normal attacks should deal one health damage")
+	check(COMBAT.health_damage_for(COMBAT.AttackType.YELLOW) == 2, "Yellow attacks should deal two health damage")
+	check(COMBAT.health_damage_for(COMBAT.AttackType.RED) == 2, "Red attacks should deal two health damage")
+	check(COMBAT.health_damage_for(COMBAT.AttackType.ENVIRONMENT) == 1, "Environment damage should remain one health damage")
 	check(is_equal_approx(knight.SPEED, 105.0), "Player movement speed should use the heavier 105 px/s tuning")
 	check(knight.collision_mask == 1, "Player body should collide with terrain only")
 	check(is_instance_valid(knight.sprite), "Player should use an AnimatedSprite2D renderer")
@@ -129,6 +135,8 @@ func run_checks() -> void:
 		check_runtime_frames(ranged_enemy.sprite, "Ranged guard")
 		check(ranged_enemy.sprite.sprite_frames.has_animation(&"attack_red"), "Ranged red cast animation should exist")
 		check_animation_bounds(ranged_enemy.sprite, &"attack_red", "Ranged red cast")
+	if is_instance_valid(melee_enemy) and is_instance_valid(ranged_enemy):
+		await test_enemy_edge_safety(knight, melee_enemy, ranged_enemy)
 
 	if is_instance_valid(melee_enemy):
 		melee_enemy.global_position = knight.global_position + Vector2(20, 0)
@@ -146,15 +154,21 @@ func run_checks() -> void:
 		check(melee_enemy.current_attack_type == COMBAT.AttackType.RED and melee_enemy.attack_box.size.x == 50.0, "Red attack should use its long hitbox")
 
 	game.spawn_projectile(Vector2.ZERO, Vector2.RIGHT, COMBAT.AttackType.NORMAL)
-	var normal_projectile: Area2D = game.get_child(game.get_child_count() - 1)
-	normal_projectile.take_damage(1)
-	check(not normal_projectile.active, "Normal projectiles should be destructible")
+	var normal_projectile := find_latest_projectile()
+	check(is_instance_valid(normal_projectile), "Normal projectile should be spawned")
+	if is_instance_valid(normal_projectile):
+		normal_projectile.take_damage(1)
+		check(not normal_projectile.active, "Normal projectiles should be destructible")
 	game.spawn_projectile(Vector2.ZERO, Vector2.RIGHT, COMBAT.AttackType.RED)
-	var red_projectile: Area2D = game.get_child(game.get_child_count() - 1)
-	red_projectile.take_damage(1)
-	check(red_projectile.active and is_equal_approx(red_projectile.velocity.length(), 230.0), "Red projectiles should be fast and indestructible")
-	normal_projectile.free()
-	red_projectile.free()
+	var red_projectile := find_latest_projectile()
+	check(is_instance_valid(red_projectile), "Red projectile should be spawned")
+	if is_instance_valid(red_projectile):
+		red_projectile.take_damage(1)
+		check(red_projectile.active and is_equal_approx(red_projectile.velocity.length(), 230.0), "Red projectiles should be fast and indestructible")
+	if is_instance_valid(normal_projectile):
+		normal_projectile.free()
+	if is_instance_valid(red_projectile):
+		red_projectile.free()
 
 	game.pause_game()
 	check(paused and game.pause_menu.visible, "Pause should stop the scene tree and show the menu")
@@ -184,26 +198,143 @@ func run_checks() -> void:
 	check(game.game_over and game.won, "Cleared gate should complete the game")
 	game.game_over = false
 	game.won = false
-	var shrine: Area2D
-	for child in game.get_children():
-		if child is Area2D and child.has_meta("used"):
-			shrine = child
-			break
+	run_state.reset_run()
+	var relic := find_health_relic()
+	check(is_instance_valid(relic), "Exactly one health relic should exist before it is secured")
+	check(get_nodes_in_group("health_relic").size() == 1, "The level should contain exactly one health relic")
+	if is_instance_valid(relic):
+		check(relic.global_position == game.HEALTH_RELIC_POSITION, "Health relic should sit on the optional midpoint platform")
+		reset_knight(knight)
+		relic._on_body_entered(knight)
+		await process_frame
+		check(knight.max_health == 4 and knight.health == 4, "Health relic should add one filled maximum-health slot")
+		check(game.health_relic_collected_this_attempt, "Relic pickup should be tracked for the current attempt")
+		check(not run_state.has_secured_health_relic(), "Relic should remain unsecured before the shrine checkpoint")
+
+	game.queue_free()
+	await process_frame
+	game = load("res://scenes/main.tscn").instantiate()
+	root.add_child(game)
+	await process_frame
+	await process_frame
+	knight = game.player
+	check(knight.max_health == 3 and knight.health == 3, "Retrying before the shrine should reset the pending relic upgrade")
+	relic = find_health_relic()
+	check(is_instance_valid(relic), "An unsecured relic should respawn after retrying")
+	if is_instance_valid(relic):
+		relic._on_body_entered(knight)
+		await process_frame
+	var shrine := find_shrine()
 	check(is_instance_valid(shrine), "Healing shrine should exist")
 	if is_instance_valid(shrine):
+		knight.health = 1
 		shrine.set_meta("used", false)
 		game._on_shrine_entered(knight, shrine)
+		check(knight.health == 3, "Healing shrine should still restore two health")
 		check(run_state.has_shrine_checkpoint(), "Shrine should activate the midpoint checkpoint")
+		check(run_state.has_secured_health_relic(), "Shrine should secure a relic collected during the current attempt")
 		game.queue_free()
 		await process_frame
 		game = load("res://scenes/main.tscn").instantiate()
 		root.add_child(game)
 		await process_frame
 		await process_frame
-		check(is_equal_approx(game.player.position.x, 1495.0), "Checkpoint retries should spawn at the moonlit shrine")
+		knight = game.player
+		check(is_equal_approx(knight.position.x, 1495.0), "Checkpoint retries should spawn at the moonlit shrine")
+		check(knight.max_health == 4 and knight.health == 4, "Secured relic upgrades should persist as four filled health slots")
+		check(not is_instance_valid(find_health_relic()), "A secured relic should not respawn")
 		check(game.enemies_total == 8 and game.enemies_left == 4, "Checkpoint retries should preserve the four cleared first-half guards")
+		run_state.reset_run()
+		run_state.activate_shrine()
+		knight.max_health = knight.BASE_MAX_HEALTH
+		knight.health = knight.BASE_MAX_HEALTH
+		game.health_relic_collected_this_attempt = false
+		game.create_health_relic(game.HEALTH_RELIC_POSITION)
+		var late_relic := find_health_relic()
+		check(is_instance_valid(late_relic), "An unclaimed relic should remain available after activating the shrine first")
+		if is_instance_valid(late_relic):
+			late_relic._on_body_entered(knight)
+			await process_frame
+			check(knight.max_health == 4 and knight.health == 4, "Post-shrine relic pickup should still add one filled health slot")
+			check(run_state.has_secured_health_relic(), "A relic collected after shrine activation should be secured immediately")
 
 	await cleanup_and_finish()
+
+func find_latest_projectile() -> Area2D:
+	for index in range(game.get_child_count() - 1, -1, -1):
+		var child := game.get_child(index)
+		if child is Area2D and child.has_method("burst") and child.has_method("take_damage"):
+			return child
+	return null
+
+func find_health_relic() -> Area2D:
+	for child in game.get_children():
+		if child is Area2D and child.is_in_group("health_relic") and not child.collected_state:
+			return child
+	return null
+
+func find_shrine() -> Area2D:
+	for child in game.get_children():
+		if child is Area2D and child.has_meta("used"):
+			return child
+	return null
+
+func test_enemy_edge_safety(knight: CharacterBody2D, melee: CharacterBody2D, ranged: CharacterBody2D) -> void:
+	var knight_position := knight.global_position
+	var melee_position := melee.global_position
+	var ranged_position := ranged.global_position
+	var melee_home: float = melee.home_x
+	var ranged_home: float = ranged.home_x
+	knight.controls_enabled = false
+	knight.global_position = Vector2(620.0, 298.0)
+	knight.velocity = Vector2.ZERO
+
+	melee.process_mode = Node.PROCESS_MODE_DISABLED
+	melee.global_position = Vector2(504.5, 298.0)
+	melee.velocity = Vector2.ZERO
+	melee.home_x = melee.global_position.x
+	melee.attack_cooldown = 99.0
+	check(melee.is_on_floor(), "Melee edge test should start from a grounded enemy")
+	check(not melee._has_floor_ahead(1.0, 67.5, 1.0 / 60.0), "Edge probe should detect the first platform's right drop")
+	check(melee._has_floor_ahead(-1.0, -67.5, 1.0 / 60.0), "Edge probe should still find terrain toward the platform interior")
+	melee.patrol_direction = 1.0
+	melee._update_patrol(1.0 / 60.0)
+	check(melee.velocity.x <= 0.0 and melee.patrol_direction < 0.0, "Patrol should turn inward instead of walking off an edge")
+	melee.velocity.x = 0.0
+	melee._update_melee(Vector2(115.5, 0.0), 115.5, 1.0 / 60.0)
+	check(is_zero_approx(melee.velocity.x), "Melee pursuit should hold at an unsupported edge")
+	melee.attack_state = melee.AttackState.ACTIVE
+	melee.attack_state_time = 0.1
+	melee.current_attack_type = COMBAT.AttackType.RED
+	melee.facing = 1.0
+	melee.velocity.x = 0.0
+	melee._update_attack_state(1.0 / 60.0)
+	check(is_zero_approx(melee.velocity.x), "Red attack lunges should stop before unsupported ground")
+	melee._cancel_attack()
+
+	ranged.process_mode = Node.PROCESS_MODE_DISABLED
+	ranged.global_position = Vector2(610.0, 298.0)
+	ranged.velocity = Vector2.ZERO
+	ranged.home_x = ranged.global_position.x
+	ranged.attack_cooldown = 99.0
+	check(ranged.is_on_floor(), "Ranged edge test should start from a grounded enemy")
+	ranged._update_ranged(Vector2(20.0, 0.0), 20.0, 1.0 / 60.0)
+	check(ranged.velocity.x > 0.0, "Ranged retreat should move back toward the platform interior when the preferred direction is unsafe")
+
+	melee.global_position = melee_position
+	melee.home_x = melee_home
+	melee.velocity = Vector2.ZERO
+	melee.attack_cooldown = 0.45
+	melee.process_mode = Node.PROCESS_MODE_INHERIT
+	ranged.global_position = ranged_position
+	ranged.home_x = ranged_home
+	ranged.velocity = Vector2.ZERO
+	ranged.attack_cooldown = 0.45
+	ranged.process_mode = Node.PROCESS_MODE_INHERIT
+	knight.global_position = knight_position
+	knight.velocity = Vector2.ZERO
+	knight.controls_enabled = true
+	await physics_frame
 
 func test_guard_rules(knight: CharacterBody2D, enemy: CharacterBody2D) -> void:
 	feedback_director.reset()
@@ -212,7 +343,7 @@ func test_guard_rules(knight: CharacterBody2D, enemy: CharacterBody2D) -> void:
 	knight.facing = 1.0
 	knight.start_guard()
 	knight.perfect_guard_time = 0.0
-	var normal_hit := COMBAT.HitData.new(COMBAT.AttackType.NORMAL, 2, 18.0, 22.0, Vector2.ZERO, enemy)
+	var normal_hit := COMBAT.HitData.new(COMBAT.AttackType.NORMAL, COMBAT.health_damage_for(COMBAT.AttackType.NORMAL), 18.0, 22.0, Vector2.ZERO, enemy)
 	var health_before: int = knight.health
 	var result := int(knight.receive_combat_hit(normal_hit))
 	check(result == COMBAT.HitResult.BLOCKED and knight.health == health_before, "Normal attacks should be blockable from the front")
@@ -221,7 +352,7 @@ func test_guard_rules(knight: CharacterBody2D, enemy: CharacterBody2D) -> void:
 	reset_knight(knight)
 	knight.start_guard()
 	knight.perfect_guard_time = 0.0
-	var yellow_hit := COMBAT.HitData.new(COMBAT.AttackType.YELLOW, 2, 0.0, 28.0, Vector2.ZERO, enemy)
+	var yellow_hit := COMBAT.HitData.new(COMBAT.AttackType.YELLOW, COMBAT.health_damage_for(COMBAT.AttackType.YELLOW), 0.0, 28.0, Vector2.ZERO, enemy)
 	result = int(knight.receive_combat_hit(yellow_hit))
 	check(result == COMBAT.HitResult.HIT and knight.health == knight.max_health - 2, "Late guard should not block yellow attacks")
 
@@ -239,9 +370,9 @@ func test_guard_rules(knight: CharacterBody2D, enemy: CharacterBody2D) -> void:
 
 	reset_knight(knight)
 	knight.start_guard()
-	var red_hit := COMBAT.HitData.new(COMBAT.AttackType.RED, 3, 0.0, 0.0, Vector2.ZERO, enemy)
+	var red_hit := COMBAT.HitData.new(COMBAT.AttackType.RED, COMBAT.health_damage_for(COMBAT.AttackType.RED), 0.0, 0.0, Vector2.ZERO, enemy)
 	result = int(knight.receive_combat_hit(red_hit))
-	check(result == COMBAT.HitResult.HIT and knight.health == knight.max_health - 3, "Red attacks should bypass guard")
+	check(result == COMBAT.HitResult.HIT and knight.health == knight.max_health - 2, "Red attacks should bypass guard and deal two damage")
 
 	reset_knight(knight)
 	enemy.global_position = knight.global_position + Vector2(-20, 0)

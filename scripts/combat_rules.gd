@@ -4,6 +4,13 @@ enum AttackType { NORMAL, YELLOW, RED, ENVIRONMENT }
 enum HitResult { HIT, BLOCKED, PERFECT_GUARD, GUARD_BROKEN, EVADED }
 enum PlayerMove { LIGHT_ONE, LIGHT_TWO, HEAVY, RIPOSTE }
 
+static func health_damage_for(attack_type: int) -> int:
+	match attack_type:
+		AttackType.YELLOW, AttackType.RED:
+			return 2
+		_:
+			return 1
+
 class HitData:
 	extends RefCounted
 

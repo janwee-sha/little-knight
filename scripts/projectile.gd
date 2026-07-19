@@ -47,7 +47,7 @@ func _on_body_entered(body: Node) -> void:
 	if not active:
 		return
 	if body.has_method("receive_combat_hit"):
-		var damage := 3 if attack_type == COMBAT.AttackType.RED else 2
+		var damage := COMBAT.health_damage_for(attack_type)
 		var hit := COMBAT.HitData.new(
 			attack_type,
 			damage,
@@ -61,7 +61,7 @@ func _on_body_entered(body: Node) -> void:
 			burst(result == COMBAT.HitResult.PERFECT_GUARD)
 		return
 	if body.has_method("take_damage"):
-		body.take_damage(3 if attack_type == COMBAT.AttackType.RED else 2, velocity.normalized() * 125.0 + Vector2.UP * 45.0)
+		body.take_damage(COMBAT.health_damage_for(attack_type), velocity.normalized() * 125.0 + Vector2.UP * 45.0)
 	burst(false)
 
 func take_damage(_amount: int, _knockback := Vector2.ZERO) -> bool:
