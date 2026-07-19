@@ -44,8 +44,10 @@ func prompt_for(action: StringName) -> String:
 		match action:
 			&"move_left", &"move_right": return "A / D"
 			&"jump": return "SPACE"
-			&"attack": return "LMB"
-			&"dash": return "RMB / SHIFT"
+			&"attack": return "LMB / J"
+			&"heavy_attack": return "MMB / K"
+			&"guard": return "RMB / Q"
+			&"dash": return "SHIFT / X"
 			&"pause": return "ESC"
 			&"restart": return "R"
 		return ""
@@ -54,15 +56,18 @@ func prompt_for(action: StringName) -> String:
 		&"move_left", &"move_right": return "L-STICK / D-PAD"
 		&"jump": return "✕" if playstation else "A"
 		&"attack": return "□" if playstation else "X"
+		&"heavy_attack": return "△" if playstation else "Y"
+		&"guard": return "L1" if playstation else "LB"
 		&"dash": return "○" if playstation else "B"
 		&"pause": return "OPTIONS" if playstation else "MENU"
-		&"restart": return "✕" if playstation else "A"
+		&"restart": return "OPTIONS" if playstation else "MENU"
 	return ""
 
 func controls_summary() -> String:
-	return "%s 移动   %s 跳跃   %s 攻击   %s 闪避" % [
+	return "%s 移动  %s 跳跃  %s 轻击  %s 重击  %s 防御  %s 闪避" % [
 		prompt_for(&"move_left"), prompt_for(&"jump"),
-		prompt_for(&"attack"), prompt_for(&"dash")
+		prompt_for(&"attack"), prompt_for(&"heavy_attack"),
+		prompt_for(&"guard"), prompt_for(&"dash")
 	]
 
 func vibrate(weak: float, strong: float, duration: float) -> void:
@@ -80,11 +85,12 @@ func _on_joy_connection_changed(device: int, connected: bool) -> void:
 	if connected:
 		return
 	if device == last_joypad_id:
+		Input.stop_joy_vibration(device)
 		last_joypad_id = -1
 		_set_device(DeviceKind.KEYBOARD_MOUSE, -1)
 
 func _setup_actions() -> void:
-	for action in [&"move_left", &"move_right", &"jump", &"attack", &"dash", &"pause", &"restart"]:
+	for action in [&"move_left", &"move_right", &"jump", &"attack", &"heavy_attack", &"guard", &"dash", &"pause", &"restart"]:
 		_ensure_action(action, 0.25)
 	_add_key(&"move_left", KEY_A)
 	_add_key(&"move_left", KEY_LEFT)
@@ -96,10 +102,14 @@ func _setup_actions() -> void:
 	_add_key(&"attack", KEY_J)
 	_add_key(&"attack", KEY_Z)
 	_add_mouse_button(&"attack", MOUSE_BUTTON_LEFT)
-	_add_key(&"dash", KEY_K)
+	_add_key(&"heavy_attack", KEY_E)
+	_add_key(&"heavy_attack", KEY_K)
+	_add_mouse_button(&"heavy_attack", MOUSE_BUTTON_MIDDLE)
+	_add_key(&"guard", KEY_Q)
+	_add_key(&"guard", KEY_L)
+	_add_mouse_button(&"guard", MOUSE_BUTTON_RIGHT)
 	_add_key(&"dash", KEY_X)
 	_add_key(&"dash", KEY_SHIFT)
-	_add_mouse_button(&"dash", MOUSE_BUTTON_RIGHT)
 	_add_key(&"pause", KEY_ESCAPE)
 	_add_key(&"pause", KEY_P)
 	_add_key(&"restart", KEY_R)
@@ -109,8 +119,11 @@ func _setup_actions() -> void:
 	_add_joy_button(&"move_right", JOY_BUTTON_DPAD_RIGHT)
 	_add_joy_button(&"jump", JOY_BUTTON_A)
 	_add_joy_button(&"attack", JOY_BUTTON_X)
+	_add_joy_button(&"heavy_attack", JOY_BUTTON_Y)
+	_add_joy_button(&"guard", JOY_BUTTON_LEFT_SHOULDER)
 	_add_joy_button(&"dash", JOY_BUTTON_B)
 	_add_joy_button(&"pause", JOY_BUTTON_START)
+	_add_joy_button(&"restart", JOY_BUTTON_START)
 	_add_ui_navigation()
 
 func _ensure_action(action: StringName, deadzone: float) -> void:

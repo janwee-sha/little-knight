@@ -1,0 +1,68 @@
+{
+  "actions": {
+    "move_left": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button", "joy_axis"],
+      "deadzone_min": 0.15,
+      "deadzone_max": 0.35
+    },
+    "move_right": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button", "joy_axis"],
+      "deadzone_min": 0.15,
+      "deadzone_max": 0.35
+    },
+    "jump": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button"]
+    },
+    "attack": {
+      "devices": ["keyboard", "mouse", "gamepad"],
+      "event_types": ["key", "mouse_button", "joy_button"]
+    },
+    "heavy_attack": {
+      "devices": ["keyboard", "mouse", "gamepad"],
+      "event_types": ["key", "mouse_button", "joy_button"]
+    },
+    "guard": {
+      "devices": ["keyboard", "mouse", "gamepad"],
+      "event_types": ["key", "mouse_button", "joy_button"]
+    },
+    "dash": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button"]
+    },
+    "pause": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button"]
+    },
+    "restart": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button"]
+    },
+    "ui_up": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button", "joy_axis"]
+    },
+    "ui_down": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button", "joy_axis"]
+    },
+    "ui_left": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button", "joy_axis"]
+    },
+    "ui_right": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button", "joy_axis"]
+    },
+    "ui_accept": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button"]
+    },
+    "ui_cancel": {
+      "devices": ["keyboard", "gamepad"],
+      "event_types": ["key", "joy_button"]
+    }
+  }
+}

@@ -14,11 +14,19 @@ The sheet was approved before strip production. `source/`, `raw/`, `canvases/`, 
 
 ## Frame counts
 
-- Player: idle 4, run 6, jump 4, attack-one 6, attack-two 6, dash 4, hurt 2, death 6.
-- Each guard: idle 4, walk 6, telegraph/attack 6, hurt 2, death 6.
+- Player: idle 4, run 6, jump 4, attack-one 6, attack-two 6, heavy-attack 8,
+  guard 4, perfect-guard 4, riposte 8, dash 4, hurt 2, death 6.
+- Melee Guard: idle 4, walk 6, normal attack 6, yellow attack 8, red attack 8,
+  hurt 2, death 6.
+- Ranged Guard: idle 4, walk 6, normal attack 6, red attack 8, hurt 2, death 6.
 - Projectile: flight 4.
 
 Every strip must preserve character identity, facing, palette, proportions, outfit details, transparency, and bottom-center anchoring. Render a preview sheet and inspect it in Godot before updating any animation library.
+
+Generated combat additions retain their chroma-key and transparent sources under
+`source/generated/`. `tools/import_generated_strip.py` divides the evenly spaced
+source strip, applies one strip-wide scale, writes bottom-anchored frame canvases,
+and produces the packed and preview artifacts used for review.
 
 ## Runtime rebuild
 

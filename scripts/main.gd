@@ -1,5 +1,6 @@
 extends Node2D
 
+const COMBAT := preload("res://scripts/combat_rules.gd")
 const PLAYER_SCRIPT := preload("res://scripts/player.gd")
 const ENEMY_SCRIPT := preload("res://scripts/enemy.gd")
 const PROJECTILE_SCRIPT := preload("res://scripts/projectile.gd")
@@ -20,6 +21,10 @@ var won := false
 var hazard_rects: Array[Rect2] = []
 var platform_rects: Array[Rect2] = []
 var platform_colors: Array[Color] = []
+var combat_clock := 0.0
+var last_enemy_attack_time := -99.0
+var last_red_attack_time := -99.0
+var active_melee_attacker: Node
 
 func _ready() -> void:
 	get_tree().paused = false
@@ -34,15 +39,17 @@ func _ready() -> void:
 	create_healing_shrine(Vector2(1460, 289))
 	hud.set_enemy_count(enemies_left, enemies_total)
 	queue_redraw()
-	hud.show_toast("穿过废墟，击败守卫并抵达右侧城门", 3.2)
+	if RunState.has_shrine_checkpoint():
+		hud.show_toast("从月光祭坛继续——击败余下守卫", 2.6)
+	else:
+		hud.show_toast("穿过废墟，击败守卫并抵达右侧城门", 3.2)
 	AudioManager.play_ambience()
 
 func _exit_tree() -> void:
 	FeedbackDirector.reset()
 
-func _process(_delta: float) -> void:
-	if is_instance_valid(player):
-		hud.set_dash_cooldown(player.dash_cooldown, 0.72)
+func _process(delta: float) -> void:
+	combat_clock += delta
 	if game_over and Input.is_action_just_pressed("restart"):
 		restart_game()
 
@@ -89,6 +96,8 @@ func resume_game() -> void:
 
 func restart_game() -> void:
 	get_tree().paused = false
+	if won:
+		RunState.reset_run()
 	FeedbackDirector.reset()
 	AudioManager.stop_all()
 	get_tree().reload_current_scene()
@@ -162,40 +171,49 @@ func _on_hazard_entered(body: Node) -> void:
 
 func spawn_player() -> void:
 	player = PLAYER_SCRIPT.new()
-	player.position = Vector2(75, 282.5)
+	player.position = Vector2(1495, 282.5) if RunState.has_shrine_checkpoint() else Vector2(75, 282.5)
 	player.health_changed.connect(_on_player_health_changed)
+	player.stamina_changed.connect(_on_player_stamina_changed)
 	player.damaged.connect(_on_player_damaged)
 	player.died.connect(_on_player_died)
 	add_child(player)
 
 func spawn_encounters() -> void:
-	spawn_enemy(Vector2(452.5, 285), ENEMY_SCRIPT.Kind.MELEE)
-	spawn_enemy(Vector2(767.5, 285), ENEMY_SCRIPT.Kind.RANGED)
-	spawn_enemy(Vector2(955, 285), ENEMY_SCRIPT.Kind.MELEE)
-	spawn_enemy(Vector2(1265, 285), ENEMY_SCRIPT.Kind.MELEE)
-	spawn_enemy(Vector2(1750, 285), ENEMY_SCRIPT.Kind.RANGED)
-	spawn_enemy(Vector2(1990, 285), ENEMY_SCRIPT.Kind.MELEE)
-	spawn_enemy(Vector2(2310, 285), ENEMY_SCRIPT.Kind.MELEE)
-	spawn_enemy(Vector2(2600, 285), ENEMY_SCRIPT.Kind.RANGED)
+	var encounters := [
+		[Vector2(452.5, 285), ENEMY_SCRIPT.Kind.MELEE, 0, true],
+		[Vector2(767.5, 285), ENEMY_SCRIPT.Kind.RANGED, 1, true],
+		[Vector2(955, 285), ENEMY_SCRIPT.Kind.MELEE, 1, true],
+		[Vector2(1265, 285), ENEMY_SCRIPT.Kind.MELEE, 2, true],
+		[Vector2(1750, 285), ENEMY_SCRIPT.Kind.RANGED, 3, false],
+		[Vector2(1990, 285), ENEMY_SCRIPT.Kind.MELEE, 3, false],
+		[Vector2(2310, 285), ENEMY_SCRIPT.Kind.MELEE, 4, false],
+		[Vector2(2600, 285), ENEMY_SCRIPT.Kind.RANGED, 4, false],
+	]
+	enemies_total = encounters.size()
+	for spec in encounters:
+		if RunState.has_shrine_checkpoint() and bool(spec[3]):
+			continue
+		spawn_enemy(spec[0], int(spec[1]), int(spec[2]))
 
-func spawn_enemy(where: Vector2, enemy_kind: int) -> void:
+func spawn_enemy(where: Vector2, enemy_kind: int, encounter: int) -> void:
 	var enemy := ENEMY_SCRIPT.new()
 	enemy.kind = enemy_kind
 	enemy.target = player
+	enemy.encounter_id = encounter
 	enemy.position = where
 	enemy.defeated.connect(_on_enemy_defeated)
 	add_child(enemy)
-	enemies_total += 1
 	enemies_left += 1
 
-func spawn_projectile(start: Vector2, direction: Vector2) -> void:
+func spawn_projectile(start: Vector2, direction: Vector2, attack_type := COMBAT.AttackType.NORMAL) -> void:
 	if game_over:
 		return
 	var projectile := PROJECTILE_SCRIPT.new()
-	projectile.setup(start, direction)
+	projectile.setup(start, direction, attack_type)
 	add_child(projectile)
 
 func _on_enemy_defeated(_enemy: Node) -> void:
+	release_enemy_attack(_enemy)
 	enemies_left = maxi(enemies_left - 1, 0)
 	hud.set_enemy_count(enemies_left, enemies_total)
 	if enemies_left == 0 and not game_over:
@@ -234,25 +252,30 @@ func create_healing_shrine(where: Vector2) -> void:
 	shape_node.shape = circle
 	shrine.add_child(shape_node)
 	shrine.body_entered.connect(_on_shrine_entered.bind(shrine))
-	shrine.set_meta("used", false)
+	shrine.set_meta("used", RunState.has_shrine_checkpoint())
+	if RunState.has_shrine_checkpoint():
+		shrine.modulate.a = 0.35
 	add_child(shrine)
 
 func _on_shrine_entered(body: Node, shrine: Area2D) -> void:
 	if body != player or shrine.get_meta("used"):
 		return
-	if player.health >= player.max_health:
-		hud.show_toast("月光祭坛：生命值已满", 1.4)
-		return
 	shrine.set_meta("used", true)
-	player.heal(2)
+	RunState.activate_shrine()
+	var healed: bool = player.health < player.max_health
+	if healed:
+		player.heal(2)
 	AudioManager.play_world(&"shrine", shrine.global_position, 0.02, -1.0)
 	FeedbackDirector.request_hit(shrine.global_position, false, false, Color("90f1ef"))
-	hud.show_toast("月光祭坛恢复了 2 点生命", 1.8)
+	hud.show_toast("检查点已激活%s" % ("，恢复 2 点生命" if healed else ""), 2.1)
 	var tween := shrine.create_tween()
 	tween.tween_property(shrine, "modulate:a", 0.0, 0.35)
 
 func _on_player_health_changed(current: int, maximum: int) -> void:
 	hud.set_health(current, maximum)
+
+func _on_player_stamina_changed(current: float, maximum: float) -> void:
+	hud.set_stamina(current, maximum)
 
 func _on_player_damaged(_amount: int) -> void:
 	hud.flash_hurt()
@@ -270,6 +293,44 @@ func win_game() -> void:
 	player.velocity = Vector2.ZERO
 	AudioManager.play_world(&"gate", Vector2(2740, 270), 0.0, 0.0)
 	hud.show_terminal(true)
+
+func activate_encounter(encounter: int) -> void:
+	for child in get_children():
+		if child is CharacterBody2D and child != player and child.encounter_id == encounter:
+			child.encounter_active = true
+
+func request_enemy_attack(enemy: Node, attack_type: int) -> bool:
+	if game_over or combat_clock - last_enemy_attack_time < 0.35:
+		return false
+	if attack_type == COMBAT.AttackType.RED and combat_clock - last_red_attack_time < 0.75:
+		return false
+	if enemy.kind == ENEMY_SCRIPT.Kind.MELEE:
+		if is_instance_valid(active_melee_attacker) and active_melee_attacker != enemy:
+			return false
+		active_melee_attacker = enemy
+	last_enemy_attack_time = combat_clock
+	if attack_type == COMBAT.AttackType.RED:
+		last_red_attack_time = combat_clock
+	return true
+
+func release_enemy_attack(enemy: Node) -> void:
+	if active_melee_attacker == enemy:
+		active_melee_attacker = null
+
+func show_combat_tutorial(attack_type: int) -> void:
+	match attack_type:
+		COMBAT.AttackType.YELLOW:
+			hud.show_toast("黄光：闪避，或在命中前瞬间防御", 2.2)
+		COMBAT.AttackType.RED:
+			hud.show_toast("红光：无法防御，只能闪避", 2.2)
+		_:
+			hud.show_toast("普通攻击：面向敌人按住防御", 2.2)
+
+func on_stamina_empty() -> void:
+	hud.flash_stamina()
+	if not RunState.has_seen_tutorial(&"stamina_empty"):
+		RunState.mark_tutorial(&"stamina_empty")
+		hud.show_toast("精力不足——停止行动后会自动恢复", 2.0)
 
 func _draw() -> void:
 	# Imported backdrop carries the environment art; this translucent sill keeps

@@ -12,11 +12,14 @@ var _volume_slider: HSlider
 var _volume_value: Label
 var _restart_confirmation: ConfirmationDialog
 var _quit_confirmation: ConfirmationDialog
+var _controls_label: Label
 
 func _ready() -> void:
 	layer = 30
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_ui()
+	InputRouter.device_changed.connect(_on_device_changed)
+	_update_controls()
 	visible = false
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -37,6 +40,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func open() -> void:
 	visible = true
+	_update_controls()
 	_volume_slider.value = SettingsStore.sfx_volume * 100.0
 	_continue_button.grab_focus()
 	AudioManager.play_sfx(&"ui_confirm", 0.0, -6.0)
@@ -93,20 +97,19 @@ func _build_ui() -> void:
 	_volume_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	volume_row.add_child(_volume_value)
 	_on_volume_changed(_volume_slider.value)
-	var controls := Label.new()
-	controls.text = "键鼠：A/D 移动  SPACE 跳跃  LMB 攻击  RMB 闪避\n手柄：摇杆/十字键移动  南键跳跃  西键攻击  东键闪避"
-	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	controls.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	controls.custom_minimum_size = Vector2(290, 34)
-	controls.add_theme_font_size_override("font_size", 9)
-	content.add_child(controls)
+	_controls_label = Label.new()
+	_controls_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_controls_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_controls_label.custom_minimum_size = Vector2(290, 40)
+	_controls_label.add_theme_font_size_override("font_size", 8)
+	content.add_child(_controls_label)
 	var quit := _make_button("退出游戏")
 	quit.pressed.connect(func(): _quit_confirmation.popup_centered(Vector2i(250, 100)))
 	content.add_child(quit)
 
 	_restart_confirmation = ConfirmationDialog.new()
 	_restart_confirmation.title = "重新开始"
-	_restart_confirmation.dialog_text = "当前进度会丢失，确定重新开始吗？"
+	_restart_confirmation.dialog_text = "将从最近检查点重新开始，确定吗？"
 	_restart_confirmation.ok_button_text = "重新开始"
 	_restart_confirmation.cancel_button_text = "取消"
 	_restart_confirmation.confirmed.connect(func(): restart_requested.emit())
@@ -134,3 +137,15 @@ func _request_resume() -> void:
 func _on_volume_changed(value: float) -> void:
 	_volume_value.text = "%d%%" % int(value)
 	SettingsStore.set_sfx_volume(value / 100.0)
+
+func _on_device_changed(_kind: StringName, _joypad_id: int) -> void:
+	_update_controls()
+
+func _update_controls() -> void:
+	if not is_instance_valid(_controls_label):
+		return
+	_controls_label.text = "%s 移动  %s 跳跃  %s 轻击\n%s 重击  %s 防御  %s 闪避" % [
+		InputRouter.prompt_for(&"move_left"), InputRouter.prompt_for(&"jump"),
+		InputRouter.prompt_for(&"attack"), InputRouter.prompt_for(&"heavy_attack"),
+		InputRouter.prompt_for(&"guard"), InputRouter.prompt_for(&"dash")
+	]

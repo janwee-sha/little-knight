@@ -21,6 +21,7 @@ InputRouter="*res://scripts/input_router.gd"
 SettingsStore="*res://scripts/settings_store.gd"
 AudioManager="*res://scripts/audio_manager.gd"
 FeedbackDirector="*res://scripts/feedback_director.gd"
+RunState="*res://scripts/run_state.gd"
 
 [display]
 
@@ -46,6 +47,14 @@ jump={
 "events": []
 }
 attack={
+"deadzone": 0.25,
+"events": []
+}
+heavy_attack={
+"deadzone": 0.25,
+"events": []
+}
+guard={
 "deadzone": 0.25,
 "events": []
 }

@@ -8,6 +8,10 @@
         "jump": 1.0,
         "attack_one": 0.75,
         "attack_two": 0.72,
+        "heavy_attack": 1.0,
+        "guard": 1.0,
+        "perfect_guard": 1.0,
+        "riposte": 1.0,
         "dash": 1.0,
         "hurt": 0.91,
         "death": 1.0
@@ -19,6 +23,8 @@
         "idle": 1.0,
         "walk": 1.0,
         "attack": 0.59,
+        "attack_yellow": 1.0,
+        "attack_red": 1.0,
         "hurt": 0.96,
         "death": 1.0
       }
@@ -29,6 +35,7 @@
         "idle": 1.0,
         "walk": 1.0,
         "attack": 0.63,
+        "attack_red": 1.0,
         "hurt": 0.78,
         "death": 1.0
       }
